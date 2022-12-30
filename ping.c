@@ -15,43 +15,30 @@
 
 #define IP4_HDRLEN 20 // IPv4 header len without options
 #define ICMP_HDRLEN 8 // ICMP header len for echo req
+#define PACKET_SIZE 64
 
-unsigned short calculate_checksum(unsigned short *paddress, int len); // Checksum Method.
+struct icmp icmphdr; // ICMP-header
+char data[] = "This is the ping.\n"; // The data we send as ping.
+int sequence = 0; // A global variable for the sequence number.
+
+unsigned short calculate_checksum(unsigned short *, int ); // Checksum Method.
 ssize_t sendPing (int, struct sockaddr_in);
 int recievePong(int, char*, int, struct sockaddr_in, socklen_t, struct timeval, struct timeval);
 
 int main(int argc, char *argv[])
 {
-    struct icmp icmphdr; // ICMP-header
-    char data[] = "This is the ping.\n";
-    int dataLen = strlen(data) + 1;
-
-    //===================
-    // ICMP header
-    //===================
-
-    /*------------------------------ Initialize icmphdr ------------------------------*/
-    icmphdr.icmp_type = ICMP_ECHO;      // Message Type (8 bits): ICMP_ECHO_REQUEST
-    icmphdr.icmp_code = 0;    // Message Code (8 bits): echo request
-    icmphdr.icmp_id = 18;    // Identifier (16 bits): some number to trace the response.
-    icmphdr.icmp_seq = 0;    // Sequence Number (16 bits): starts at 0
-    icmphdr.icmp_cksum = 0;  // ICMP header checksum (16 bits): set to 0 not to include into checksum calculation
-
-
-    char packet[70] = {0};     // Combine the packet
-    memcpy((packet), &icmphdr, ICMP_HDRLEN);     // Next, ICMP header
-    memcpy(packet + ICMP_HDRLEN, data, dataLen);     // After ICMP header, add the ICMP data.
-
-    // Calculate the ICMP header checksum
-    icmphdr.icmp_cksum = calculate_checksum((unsigned short *)(packet), ICMP_HDRLEN + dataLen);
-    memcpy((packet), &icmphdr, ICMP_HDRLEN);
-
     /*------------------------------ Create dest_in ------------------------------*/
     struct sockaddr_in dest_in; // Struct for holding the info for destination.
     memset(&dest_in, 0, sizeof(struct sockaddr_in)); // Resting "dest_in".
     dest_in.sin_family = AF_INET; // Defining as IPv4 communication.
     dest_in.sin_addr.s_addr = inet_addr(argv[1]); // Assigning it the IP address we got as an argument.
     // The port is irrelevant for Networking and therefore was zeroed.
+
+    if (inet_pton(AF_INET, argv[1], &dest_in.sin_addr) <= 0)
+    {
+        printf("(-) Failed to convert IPv4 address to binary! -> inet_pton() failed with error code: %d\n", errno);
+        exit(EXIT_FAILURE); // Exit program and return EXIT_FAILURE (defined as 1 in stdlib.h).
+    }
 
     /*------------------------------ Create Raw Socket ------------------------------*/
     int sock = -1;
@@ -66,15 +53,20 @@ int main(int argc, char *argv[])
     socklen_t len = sizeof(dest_in); // Save the dest_in length.
     struct timeval start, end;
     ssize_t bytes_received = -1; // Will help keep track of the bytes received.
-    char reply[70] = {0}; // A buffer to hold the replay (pong).
+    char reply[PACKET_SIZE] = {0}; // A buffer to hold the replay (pong).
 
+    printf("PING %s (%s): %d data bytes\n",
+           argv[1], argv[1], PACKET_SIZE - ICMP_HDRLEN);
     // An infinite do-while loop to send ping and receive pong.
     do {
         // Start the timer.
         gettimeofday(&start, 0);
+        // Create the packet and send the ping.
         sendPing (sock, dest_in);
-        // Create the IP header and ICP header.
+        // Receive the ping and save in "reply".
         bytes_received = recievePong(sock, reply, sizeof(reply), dest_in, len, start, end);
+        // Reset reply.
+        bzero(reply, PACKET_SIZE);
         sleep(1); // Wait for a second before repeating process.
     } while (bytes_received != 0);
 
@@ -89,9 +81,7 @@ int main(int argc, char *argv[])
 //===================
 
 ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
-    struct icmp icmphdr; // ICMP-header
-    char data[] = "This is the ping.\n";
-    static int counter = 0;
+    int dataLen = strlen(data) + 1;
     //===================
     // ICMP header
     //===================
@@ -100,12 +90,12 @@ ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
     icmphdr.icmp_type = ICMP_ECHO;      // Message Type (8 bits): ICMP_ECHO_REQUEST
     icmphdr.icmp_code = 0;    // Message Code (8 bits): echo request
     icmphdr.icmp_id = 18;    // Identifier (16 bits): some number to trace the response.
-    icmphdr.icmp_seq = counter++;    // Sequence Number (16 bits): starts at 0
+    icmphdr.icmp_seq = sequence++;    // Sequence Number (16 bits): starts at 0
     icmphdr.icmp_cksum = 0;  // ICMP header checksum (16 bits): set to 0 not to include into checksum calculation
 
-    char packet[70] = {0};     // Combine the packet
+    char packet[PACKET_SIZE] = {0};     // Combine the packet
     memcpy((packet), &icmphdr, ICMP_HDRLEN);     // Next, ICMP header
-    memcpy(packet + ICMP_HDRLEN, data, sizeof(data));     // After ICMP header, add the ICMP data.
+    memcpy(packet + ICMP_HDRLEN, data, dataLen);     // After ICMP header, add the ICMP data.
 
     // Calculate the ICMP header checksum
     icmphdr.icmp_cksum = calculate_checksum((unsigned short *)(packet), sizeof(packet));
@@ -121,12 +111,11 @@ ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
     return bytes_sent;
 };
 
-int recievePong(int sock, char* reply, int sizetosend, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
-    //===================
-    // Receive Pong
-    //===================
-    //char reply[IP_MAXPACKET];
+//===================
+// Receive Pong
+//===================
 
+int recievePong(int sock, char* reply, int sizetosend, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
     // Receive the packet using recvfrom() for receiving datagrams.
     int bytes_received = recvfrom(sock, reply, sizetosend, 0, (struct sockaddr *)&dest_in, &len);
     gettimeofday(&end, 0); // End the timer.
@@ -141,14 +130,16 @@ int recievePong(int sock, char* reply, int sizetosend, struct sockaddr_in dest_i
 
         float milliseconds = (float )(end.tv_sec - start.tv_sec) * 1000.0f +
                              (float) (end.tv_usec - start.tv_usec) / 1000.0f;
-        printf("\n%d bytes recieved from %s: icmp_seq=%d ttl=%d time=%f ms",
+        printf("%d bytes recieved from %s: icmp_seq=%d ttl=%d time=%f ms\n",
                ntohs(iphdr->tot_len)-IP4_HDRLEN, destinationIP, icmphdrP->un.echo.sequence++, iphdr->ttl, milliseconds);
     }
     return bytes_received;
 };
 
+//===================
+// Calculate checksum
+//===================
 
-//------------------------------- Compute checksum -------------------------------
 unsigned short calculate_checksum(unsigned short *paddress, int len)
 {
     int nleft = len;
