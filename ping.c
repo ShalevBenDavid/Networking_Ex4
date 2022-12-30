@@ -15,11 +15,10 @@
 
 #define IP4_HDRLEN 20 // IPv4 header len without options
 #define ICMP_HDRLEN 8 // ICMP header len for echo req
-#define MAX_SIZE 200
 
 unsigned short calculate_checksum(unsigned short *paddress, int len); // Checksum Method.
-ssize_t sendPing (int, char*, struct sockaddr_in);
-int receivePong(int sock, char *, struct sockaddr_in, socklen_t, struct timeval, struct timeval);
+ssize_t sendPing (int, struct sockaddr_in);
+int recievePong(int, char*, int, struct sockaddr_in, socklen_t, struct timeval, struct timeval);
 
 int main(int argc, char *argv[])
 {
@@ -39,7 +38,7 @@ int main(int argc, char *argv[])
     icmphdr.icmp_cksum = 0;  // ICMP header checksum (16 bits): set to 0 not to include into checksum calculation
 
 
-    char packet[MAX_SIZE];     // Combine the packet
+    char packet[70] = {0};     // Combine the packet
     memcpy((packet), &icmphdr, ICMP_HDRLEN);     // Next, ICMP header
     memcpy(packet + ICMP_HDRLEN, data, dataLen);     // After ICMP header, add the ICMP data.
 
@@ -55,7 +54,7 @@ int main(int argc, char *argv[])
     // The port is irrelevant for Networking and therefore was zeroed.
 
     /*------------------------------ Create Raw Socket ------------------------------*/
-    int sock;
+    int sock = -1;
     if ((sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) == -1) // Check if we were successful in creating the socket.
     {
         fprintf(stderr, "socket() failed with error: %d", errno);
@@ -67,14 +66,15 @@ int main(int argc, char *argv[])
     socklen_t len = sizeof(dest_in); // Save the dest_in length.
     struct timeval start, end;
     ssize_t bytes_received = -1; // Will help keep track of the bytes received.
-    char reply[MAX_SIZE] = {0}; // A buffer to hold the replay (pong).
+    char reply[70] = {0}; // A buffer to hold the replay (pong).
 
     // An infinite do-while loop to send ping and receive pong.
     do {
         // Start the timer.
         gettimeofday(&start, 0);
-        sendPing (sock, packet, dest_in);
-        bytes_received = receivePong(sock, reply, dest_in, len, start, end);
+        sendPing (sock, dest_in);
+        // Create the IP header and ICP header.
+        bytes_received = recievePong(sock, reply, sizeof(reply), dest_in, len, start, end);
         sleep(1); // Wait for a second before repeating process.
     } while (bytes_received != 0);
 
@@ -87,9 +87,32 @@ int main(int argc, char *argv[])
 //===================
 //Send Ping
 //===================
-ssize_t sendPing (int sock, char* packet, struct sockaddr_in dest_in) {
+
+ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
+    struct icmp icmphdr; // ICMP-header
+    char data[] = "This is the ping.\n";
+    static int counter = 0;
+    //===================
+    // ICMP header
+    //===================
+
+    /*------------------------------ Initialize icmphdr ------------------------------*/
+    icmphdr.icmp_type = ICMP_ECHO;      // Message Type (8 bits): ICMP_ECHO_REQUEST
+    icmphdr.icmp_code = 0;    // Message Code (8 bits): echo request
+    icmphdr.icmp_id = 18;    // Identifier (16 bits): some number to trace the response.
+    icmphdr.icmp_seq = counter++;    // Sequence Number (16 bits): starts at 0
+    icmphdr.icmp_cksum = 0;  // ICMP header checksum (16 bits): set to 0 not to include into checksum calculation
+
+    char packet[70] = {0};     // Combine the packet
+    memcpy((packet), &icmphdr, ICMP_HDRLEN);     // Next, ICMP header
+    memcpy(packet + ICMP_HDRLEN, data, sizeof(data));     // After ICMP header, add the ICMP data.
+
+    // Calculate the ICMP header checksum
+    icmphdr.icmp_cksum = calculate_checksum((unsigned short *)(packet), sizeof(packet));
+    memcpy((packet), &icmphdr, ICMP_HDRLEN);
     // Send the packet using sendto() for sending datagrams.
-    ssize_t bytes_sent = sendto(sock, packet, sizeof(packet), 0, (struct sockaddr *)&dest_in, sizeof(dest_in));
+    ssize_t bytes_sent = sendto(sock, packet, sizeof (packet), 0, (struct sockaddr *)&dest_in, sizeof(dest_in));
+
     if (bytes_sent == -1)
     {
         fprintf(stderr, "sendto() failed with error: %d", errno);
@@ -98,24 +121,28 @@ ssize_t sendPing (int sock, char* packet, struct sockaddr_in dest_in) {
     return bytes_sent;
 };
 
-//===================
-// Receive Pong
-//===================
-int receivePong(int sock, char* packet, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
+int recievePong(int sock, char* reply, int sizetosend, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
+    //===================
+    // Receive Pong
+    //===================
+    //char reply[IP_MAXPACKET];
+
     // Receive the packet using recvfrom() for receiving datagrams.
-    int bytes_received = recvfrom(sock, packet, sizeof(packet), 0, (struct sockaddr *)&dest_in, &len);
+    int bytes_received = recvfrom(sock, reply, sizetosend, 0, (struct sockaddr *)&dest_in, &len);
     gettimeofday(&end, 0); // End the timer.
     if (bytes_received > 0)
     {
-        struct iphdr *iphdr = (struct iphdr *)packet;
-        struct icmphdr *icmphdrP = (struct icmphdr *)(packet + sizeof(iphdr));
+        struct iphdr *iphdr = (struct iphdr *)reply;
+        struct icmphdr *icmphdrP = (struct icmphdr *)(reply + sizeof(struct iphdr));
+
+
         char destinationIP[32] = { '\0' };
         inet_ntop(AF_INET, &dest_in.sin_addr.s_addr, destinationIP, sizeof(destinationIP));
 
         float milliseconds = (float )(end.tv_sec - start.tv_sec) * 1000.0f +
                              (float) (end.tv_usec - start.tv_usec) / 1000.0f;
-        printf("%d bytes recieved from %s: icmp_seq=%d ttl=%d time=%f ms\n",
-               ntohs(iphdr -> tot_len), destinationIP, icmphdrP -> un.echo.sequence++, iphdr -> ttl, milliseconds);
+        printf("\n%d bytes recieved from %s: icmp_seq=%d ttl=%d time=%f ms",
+               ntohs(iphdr->tot_len)-IP4_HDRLEN, destinationIP, icmphdrP->un.echo.sequence++, iphdr->ttl, milliseconds);
     }
     return bytes_received;
 };
