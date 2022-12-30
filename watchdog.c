@@ -9,8 +9,6 @@
 #include <sys/time.h>
 #include <signal.h>
 #include <arpa/inet.h>
-#include <float.h>
-#include <stdbool.h>
 
 #define PORT 3000
 
@@ -54,7 +52,7 @@ int main()
     }
 
     // Make server start listening and waiting, and check if listen() was successful.
-    if (listen(SocketFD, 1) == -1) { // We allow no more than MAX_CONNECTIONS queue connections requests.
+    if (listen(SocketFD, 2) == -1) { // We allow no more than MAX_CONNECTIONS queue connections requests.
         printf("Failed to start listening! -> listen() failed with error code : %d\n", errno);
         close(SocketFD); // close the socket.
         exit(EXIT_FAILURE); // Exit program and return EXIT_FAILURE (defined as 1 in stdlib.h).
@@ -78,13 +76,13 @@ int main()
         printf("(=) Connection established.\n\n");
     }
 
-    printf("hello partb");
+    /*printf("hello partb");
     while (timer < 10seconds)
     {
         recv();
         timer = 0seconds;
     }
-    send("timeout")
+    send("timeout")*/
 
         return 0;
 }
