@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
     int sock;
     if ((sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) == -1) // Check if we were successful in creating the socket.
     {
-        fprintf(stderr, "socket() failed with error: %d", errno);
+        fprintf(stderr, "socket() failed with error: %d\n", errno);
         fprintf(stderr, "To create a raw socket, the process needs to be run by Admin/root user.\n\n");
         return -1;
     }
@@ -60,6 +60,7 @@ int main(int argc, char *argv[])
     } else {
         printf("(=) Connection with server established.\n\n");
     }
+
     // Make Socket Non-Blocking for 5 seconds.
     struct timeval tv;
     tv.tv_sec = 5;
@@ -104,7 +105,7 @@ ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
     // ICMP header
     //===================
 
-    /*------------------------------ Initialize icmphdr ------------------------------*/
+    /*------------------------------ Initialize icmphdr - Recreate packet  ------------------------------*/
     icmphdr.icmp_type = ICMP_ECHO;      // Message Type (8 bits): ICMP_ECHO_REQUEST
     icmphdr.icmp_code = 0;    // Message Code (8 bits): echo request
     icmphdr.icmp_id = 18;    // Identifier (16 bits): some number to trace the response.
@@ -140,10 +141,10 @@ int receivePong(int sock, char* reply, int sizToSend, struct sockaddr_in dest_in
     if (bytes_received > 0)
     {
         struct iphdr *iphdr = (struct iphdr *)reply;
-        struct icmphdr *icmphdrP = (struct icmphdr *)(reply + sizeof(struct iphdr));
+        struct icmphdr *icmphdrP = (struct icmphdr *)(reply + iphdr -> ihl * 4);
 
         char destinationIP[32] = { '\0' };
-        inet_ntop(AF_INET, &dest_in.sin_addr.s_addr, destinationIP, sizeof(destinationIP));
+        inet_ntop(AF_INET, &iphdr -> saddr, destinationIP, sizeof(destinationIP));
 
         float milliseconds = (float )(end.tv_sec - start.tv_sec) * 1000.0f +
                              (float) (end.tv_usec - start.tv_usec) / 1000.0f;

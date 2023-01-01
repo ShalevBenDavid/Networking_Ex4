@@ -5,16 +5,13 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/time.h>
-#include <signal.h>
-#include <arpa/inet.h>
 #include <time.h>
 #include <fcntl.h>
 
 #define PORT 3000
 
 int main() {
+
 //============================================
 // Create TCP Socket And Connect To better_ping
 //============================================
@@ -55,7 +52,7 @@ int main() {
     }
 
     // Make server start listening and waiting, and check if listen() was successful.
-    if (listen(socketFD, 1) == -1) { // We allow no more than MAX_CONNECTIONS queue connections requests.
+    if (listen(socketFD, 1) == -1) { // We allow no more than 1 queue connections request.
         printf("Failed to start listening! -> listen() failed with error code : %d\n", errno);
         close(socketFD); // close the socket.
         exit(EXIT_FAILURE); // Exit program and return EXIT_FAILURE (defined as 1 in stdlib.h).
@@ -71,8 +68,8 @@ int main() {
     int pingSocket = accept(socketFD, (struct sockaddr *) &clientAddress, &clientAddressLen); // Accept connection.
     if (pingSocket == -1) {
         printf("(-) Failed to accept connection. -> accept() failed with error code: %d\n", errno);
-        close(socketFD);
         close(pingSocket);
+        close(socketFD);
         exit(EXIT_FAILURE); // Exit program and return EXIT_FAILURE (defined as 1 in stdlib.h).
     } else {
         printf("(=) Connection established.\n\n");
@@ -82,9 +79,9 @@ int main() {
 // Make Socket Non-Blocking
 //=========================
 
-   int flags=fcntl(pingSocket, F_GETFL, 0);  // DO CHECK ERRORS!
+   int flags=fcntl(pingSocket, F_GETFL, 0);
     flags |= O_NONBLOCK;
-    fcntl(pingSocket, F_SETFL, flags);  // SERIOUSLY*/
+    fcntl(pingSocket, F_SETFL, flags);
 
 //=================================
 // Create Timer And Check If Timeout
@@ -92,16 +89,16 @@ int main() {
 
     time_t start, current;
     int timer = 0;
-    char buffer[6];
-    while (timer < 10) {
-        if (recv(pingSocket, buffer, 6, 0) > 0) {
+    char buffer[6]; // Will hold the message from the client ("reset").
+    while (timer < 10) { // While timer < 10 keep checking.
+        if (recv(pingSocket, buffer, 6, 0) > 0) { // If we got "reset" message, reset timer.
             start = time(NULL);
         }
         current = time(NULL);
-        timer = (int) difftime(current, start);
+        timer = (int) difftime(current, start); // Update timer.
     }
-    send(socketFD, "timeout", 7, 0);
-    close(socketFD);
+    send(pingSocket, "timeout", 7, 0); // Send "timeout" message to client.
     close(pingSocket);
+    close(socketFD);
     exit(EXIT_FAILURE);
 }

@@ -29,11 +29,12 @@ int sequence = 0; // A global variable for the sequence number.
 
 unsigned short calculate_checksum(unsigned short *, int ); // Checksum Method.
 ssize_t sendPing (int, struct sockaddr_in);
-int receivePong(int, char*, int, struct sockaddr_in, socklen_t, struct timeval, struct timeval);
+void receivePong(int, char*, int, struct sockaddr_in, socklen_t, struct timeval, struct timeval);
 
 // run 2 programs using fork + exec
 // command: make clean && make all && ./partb
 int main(int argc, char *argv[]) {
+
 //=========================================
 // Create TCP Socket And Connect To Watchdog
 //=========================================
@@ -131,7 +132,6 @@ int main(int argc, char *argv[]) {
 
     socklen_t len = sizeof(dest_in); // Save the dest_in length.
     struct timeval start, end;
-    ssize_t bytes_received; // Will help keep track of the bytes received.
     char reply[PACKET_SIZE] = {0}; // A buffer to hold the replay (pong).
     printf("PING %s (%s): %d data bytes\n", argv[1], argv[1], PACKET_SIZE - ICMP_HDRLEN);
 
@@ -141,14 +141,16 @@ int main(int argc, char *argv[]) {
         gettimeofday(&start, 0);
         // Create the packet and send the ping.
         sendPing(sock, dest_in);
-        // Send message to the watchdog to reset timer.
-        send(socketFD, "start", 5, 0);
+        // Send message to the watchdog to reset timer since we sent a new ICMP ECHO REQUEST.
+        send(socketFD, "reset", 5, 0);
         // Receive the ping and save in "reply".
         receivePong(sock, reply, sizeof(reply), dest_in, len, start, end);
         // Reset reply.
         bzero(reply, PACKET_SIZE);
         sleep(1); // Wait for a second before repeating process.
-    } while (waitpid(pid, &status, WNOHANG) == 0);
+    } while (waitpid(pid, &status, WNOHANG) == 0); // While the son process is still up (no timeout occurred).
+    char buffer[8];
+    recv(socketFD, buffer, 7, 0); // Receive "timeout" message from watchdog.
     printf("\nchild exit status is: %d", status);
 
     printf("\nserver %s cannot be reached.\n", argv[1]);
@@ -169,7 +171,7 @@ ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
     // ICMP header
     //===================
 
-    /*------------------------------ Initialize icmphdr ------------------------------*/
+    /*------------------------------ Initialize icmphdr - Recreate packet ------------------------------*/
     struct icmp icmphdr; // ICMP-header
     icmphdr.icmp_type = ICMP_ECHO;      // Message Type (8 bits): ICMP_ECHO_REQUEST
     icmphdr.icmp_code = 0;    // Message Code (8 bits): echo request
@@ -199,25 +201,24 @@ ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
 // Receive Pong
 //===================
 
-int receivePong(int sock, char* reply, int sizToSend, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
+void receivePong(int sock, char* reply, int sizToSend, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
     // Receive the packet using recvfrom() for receiving datagrams.
     int bytes_received = (int) recvfrom(sock, reply, sizToSend, 0, (struct sockaddr *)&dest_in, &len);
     gettimeofday(&end, 0); // End the timer.
     if (bytes_received > 0)
     {
         struct iphdr *iphdr = (struct iphdr *)reply;
-        struct icmphdr *icmphdrP = (struct icmphdr *)(reply + sizeof(struct iphdr));
+        struct icmphdr *icmphdrP = (struct icmphdr *)(reply + iphdr -> ihl * 4);
 
 
         char destinationIP[32] = { '\0' };
-        inet_ntop(AF_INET, &dest_in.sin_addr.s_addr, destinationIP, sizeof(destinationIP));
+        inet_ntop(AF_INET, &iphdr -> saddr, destinationIP, sizeof(destinationIP));
 
         float milliseconds = (float )(end.tv_sec - start.tv_sec) * 1000.0f +
                              (float) (end.tv_usec - start.tv_usec) / 1000.0f;
         printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%f ms\n",
-               ntohs(iphdr->tot_len)-IP4_HDRLEN, destinationIP, icmphdrP->un.echo.sequence++, iphdr->ttl, milliseconds);
+               ntohs(iphdr -> tot_len)-IP4_HDRLEN, destinationIP, icmphdrP -> un.echo.sequence++, iphdr -> ttl, milliseconds);
     }
-    return bytes_received;
 }
 
 //===================
