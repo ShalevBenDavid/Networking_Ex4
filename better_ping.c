@@ -16,8 +16,9 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 
-#define PORT 3012
+#define PORT 3000
 #define IP_ADDRESS "127.0.0.1"
 #define IP4_HDRLEN 20 // IPv4 header len without options
 #define ICMP_HDRLEN 8 // ICMP header len for echo req
@@ -95,6 +96,11 @@ int main(int argc, char *argv[]) {
     } else {
         printf("(=) Connection with server established.\n\n");
     }
+    // Make Socket Non-Blocking for 10 seconds.
+    struct timeval tv;
+    tv.tv_sec = 10;
+    tv.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
 
 //=================================================
 // Send Ping And Receive Pong Using fork And execvp
@@ -135,17 +141,17 @@ int main(int argc, char *argv[]) {
         gettimeofday(&start, 0);
         // Create the packet and send the ping.
         sendPing(sock, dest_in);
-        // Send message to the watchdog
+        // Send message to the watchdog to reset timer.
         send(socketFD, "start", 5, 0);
         // Receive the ping and save in "reply".
-        bytes_received = receivePong(sock, reply, sizeof(reply), dest_in, len, start, end);
+        receivePong(sock, reply, sizeof(reply), dest_in, len, start, end);
         // Reset reply.
         bzero(reply, PACKET_SIZE);
         sleep(1); // Wait for a second before repeating process.
-    } while (bytes_received != 0);
+    } while (waitpid(pid, &status, WNOHANG) == 0);
     printf("\nchild exit status is: %d", status);
 
-    printf("\nserver %s cannot be reached.", argv[1]);
+    printf("\nserver %s cannot be reached.\n", argv[1]);
     close(socketFD); // Close TCP socket.
     close(sock); // Close the raw socket descriptor.
     exit(EXIT_FAILURE);

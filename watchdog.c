@@ -12,7 +12,7 @@
 #include <time.h>
 #include <fcntl.h>
 
-#define PORT 3012
+#define PORT 3000
 
 int main() {
 //============================================

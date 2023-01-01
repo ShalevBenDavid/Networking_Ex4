@@ -60,7 +60,7 @@ int main(int argc, char *argv[])
     } else {
         printf("(=) Connection with server established.\n\n");
     }
-
+    // Make Socket Non-Blocking for 5 seconds.
     struct timeval tv;
     tv.tv_sec = 5;
     tv.tv_usec = 0;
@@ -123,7 +123,7 @@ ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
 
     if (bytes_sent == -1)
     {
-        fprintf(stderr, "sendto() failed with error: %d", errno);
+        fprintf(stderr, "\nsendto() failed with error: %d", errno);
         return -1;
     }
     return bytes_sent;
