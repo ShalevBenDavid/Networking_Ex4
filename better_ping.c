@@ -17,7 +17,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 
-#define PORT 3000
+#define PORT 3012
 #define IP_ADDRESS "127.0.0.1"
 #define IP4_HDRLEN 20 // IPv4 header len without options
 #define ICMP_HDRLEN 8 // ICMP header len for echo req
@@ -32,8 +32,7 @@ int receivePong(int, char*, int, struct sockaddr_in, socklen_t, struct timeval, 
 
 // run 2 programs using fork + exec
 // command: make clean && make all && ./partb
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 //=========================================
 // Create TCP Socket And Connect To Watchdog
 //=========================================
@@ -42,11 +41,10 @@ int main(int argc, char *argv[])
     int socketFD = socket(AF_INET, SOCK_STREAM, 0);
 
     // Check if we were successful in creating socket.
-    if(socketFD == -1) {
+    if (socketFD == -1) {
         printf("(-) Could not create socket! -> socket() failed with error code: %d\n", errno);
         exit(EXIT_FAILURE); // Exit program and return EXIT_FAILURE (defined as 1 in stdlib.h).
-    }
-    else {
+    } else {
         printf("(=) Socket created successfully.\n");
     }
 
@@ -60,24 +58,10 @@ int main(int argc, char *argv[])
     serverAddress.sin_addr.s_addr = inet_addr(IP_ADDRESS);
 
     // Convert address to binary.
-    if (inet_pton(AF_INET, IP_ADDRESS, &serverAddress.sin_addr) <= 0)
-    {
+    if (inet_pton(AF_INET, IP_ADDRESS, &serverAddress.sin_addr) <= 0) {
         printf("(-) Failed to convert IPv4 address to binary! -> inet_pton() failed with error code: %d\n", errno);
         exit(EXIT_FAILURE); // Exit program and return EXIT_FAILURE (defined as 1 in stdlib.h).
     }
-
-    //Create connection with server.
-    int connection = connect(socketFD, (struct sockaddr*) &serverAddress, sizeof(serverAddress));
-
-    // Check if we were successful in connecting with server.
-    if(connection == -1) {
-        printf("(-) Could not connect to server! -> connect() failed with error code: %d\n", errno);
-        exit(EXIT_FAILURE); // Exit program and return// EXIT_FAILURE (defined as 1 in stdlib.h).
-    }
-    else {
-        printf("(=) Connection with server established.\n\n");
-    }
-
 
     /*------------------------------ Create dest_in ------------------------------*/
     struct sockaddr_in dest_in; // Struct for holding the info for destination.
@@ -86,15 +70,15 @@ int main(int argc, char *argv[])
     dest_in.sin_addr.s_addr = inet_addr(argv[1]); // Assigning it the IP address we got as an argument.
     // The port is irrelevant for Networking and therefore was zeroed.
 
-    if (inet_pton(AF_INET, argv[1], &dest_in.sin_addr) <= 0)
-    {
+    if (inet_pton(AF_INET, argv[1], &dest_in.sin_addr) <= 0) {
         printf("(-) Failed to convert IPv4 address to binary! -> inet_pton() failed with error code: %d\n", errno);
         exit(EXIT_FAILURE); // Exit program and return EXIT_FAILURE (defined as 1 in stdlib.h).
     }
 
-//==================================
-// Create RAW Socket And Send Ping
-//==================================
+//==================
+// Create RAW Socket
+//==================
+
     int sock;
     if ((sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) == -1) // Check if we were successful in creating the socket.
     {
@@ -102,47 +86,69 @@ int main(int argc, char *argv[])
         fprintf(stderr, "To create a raw socket, the process needs to be run by Admin/root user.\n\n");
         return -1;
     }
+    // Connect to the address specified by dest_in.
+    int connection = connect(sock, (struct sockaddr *) &dest_in, sizeof(dest_in));
+    // Check if we were successful in connecting with the destination.
+    if (connection == -1) {
+        printf("(-) Could not connect to server! -> connect() failed with error code: %d\n", errno);
+        exit(EXIT_FAILURE); // Exit program and return// EXIT_FAILURE (defined as 1 in stdlib.h).
+    } else {
+        printf("(=) Connection with server established.\n\n");
+    }
 
-    /*------------------------------ Send Ping And Get The Pong Response ------------------------------*/
+//=================================================
+// Send Ping And Receive Pong Using fork And execvp
+//=================================================
+
+    char *argd[2];
+    // compiled watchdog.c by makefile
+    argd[0] = "./watchdog";
+    argd[1] = NULL;
+    int status;
+    int pid = fork();
+    if (pid == 0) {
+        printf("in child \n");
+        execvp(argd[0], argd);
+    }
+
+    //Create connection with watchdog.
+    sleep(1);
+    connection = connect(socketFD, (struct sockaddr *) &serverAddress, sizeof(serverAddress));
+
+    // Check if we were successful in connecting with watchdog.
+    if (connection == -1) {
+        printf("(-) Could not connect to server! -> connect() failed with error code: %d\n", errno);
+        exit(EXIT_FAILURE); // Exit program and return// EXIT_FAILURE (defined as 1 in stdlib.h).
+    } else {
+        printf("(=) Connection with server established.\n\n");
+    }
+
     socklen_t len = sizeof(dest_in); // Save the dest_in length.
     struct timeval start, end;
     ssize_t bytes_received; // Will help keep track of the bytes received.
     char reply[PACKET_SIZE] = {0}; // A buffer to hold the replay (pong).
+    printf("PING %s (%s): %d data bytes\n", argv[1], argv[1], PACKET_SIZE - ICMP_HDRLEN);
 
-    printf("PING %s (%s): %d data bytes\n",
-           argv[1], argv[1], PACKET_SIZE - ICMP_HDRLEN);
-    // An infinite do-while loop to send ping and receive pong.
+    // A do-while loop to send ping and receive pong.
     do {
         // Start the timer.
         gettimeofday(&start, 0);
         // Create the packet and send the ping.
-        sendPing (sock, dest_in);
+        sendPing(sock, dest_in);
+        // Send message to the watchdog
+        send(socketFD, "start", 5, 0);
         // Receive the ping and save in "reply".
         bytes_received = receivePong(sock, reply, sizeof(reply), dest_in, len, start, end);
         // Reset reply.
         bzero(reply, PACKET_SIZE);
         sleep(1); // Wait for a second before repeating process.
     } while (bytes_received != 0);
+    printf("\nchild exit status is: %d", status);
 
-    // Close the raw socket descriptor.
-    close(sock);
-
-    return 0;
-
-    char *args[2];
-    // compiled watchdog.c by makefile
-    args[0] = "./watchdog";
-    args[1] = NULL;
-    int status;
-    int pid = fork();
-    if (pid == 0)
-    {
-        printf("in child \n");
-        execvp(args[0], args);
-    }
-    wait(&status); // waiting for child to finish before exiting
-    printf("child exit status is: %d", status);
-    return 0;
+    printf("\nserver %s cannot be reached.", argv[1]);
+    close(socketFD); // Close TCP socket.
+    close(sock); // Close the raw socket descriptor.
+    exit(EXIT_FAILURE);
 }
 
 
@@ -151,7 +157,8 @@ int main(int argc, char *argv[])
 //===================
 
 ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
-    int dataLen = strlen(data) + 1;
+    int dataLen = (int) strlen(data) + 1;
+
     //===================
     // ICMP header
     //===================
@@ -188,7 +195,7 @@ ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
 
 int receivePong(int sock, char* reply, int sizToSend, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
     // Receive the packet using recvfrom() for receiving datagrams.
-    int bytes_received = recvfrom(sock, reply, sizToSend, 0, (struct sockaddr *)&dest_in, &len);
+    int bytes_received = (int) recvfrom(sock, reply, sizToSend, 0, (struct sockaddr *)&dest_in, &len);
     gettimeofday(&end, 0); // End the timer.
     if (bytes_received > 0)
     {

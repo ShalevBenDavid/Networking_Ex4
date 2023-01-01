@@ -40,7 +40,10 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE); // Exit program and return EXIT_FAILURE (defined as 1 in stdlib.h).
     }
 
-    /*------------------------------ Create Raw Socket ------------------------------*/
+//==================
+// Create RAW Socket
+//==================
+
     int sock;
     if ((sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) == -1) // Check if we were successful in creating the socket.
     {
@@ -48,9 +51,23 @@ int main(int argc, char *argv[])
         fprintf(stderr, "To create a raw socket, the process needs to be run by Admin/root user.\n\n");
         return -1;
     }
+    // Connect to the address specified by dest_in.
+    int connection = connect(sock, (struct sockaddr *) &dest_in, sizeof(dest_in));
+    // Check if we were successful in connecting with the destination.
+    if (connection == -1) {
+        printf("(-) Could not connect to server! -> connect() failed with error code: %d\n", errno);
+        exit(EXIT_FAILURE); // Exit program and return// EXIT_FAILURE (defined as 1 in stdlib.h).
+    } else {
+        printf("(=) Connection with server established.\n\n");
+    }
+
+    struct timeval tv;
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
 
     /*------------------------------ Send Ping And Get The Pong Response ------------------------------*/
-    socklen_t len = sizeof(dest_in); // Save the dest_in length.
+    socklen_t len = sizeof(struct sockaddr_in); // Save the dest_in length.
     struct timeval start, end;
     ssize_t bytes_received; // Will help keep track of the bytes received.
     char reply[PACKET_SIZE] = {0}; // A buffer to hold the replay (pong).
@@ -81,7 +98,8 @@ int main(int argc, char *argv[])
 //===================
 
 ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
-    int dataLen = strlen(data) + 1;
+    int dataLen = (int) strlen(data) + 1;
+
     //===================
     // ICMP header
     //===================
@@ -101,7 +119,7 @@ ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
     icmphdr.icmp_cksum = calculate_checksum((unsigned short *)(packet), sizeof(packet));
     memcpy((packet), &icmphdr, ICMP_HDRLEN);
     // Send the packet using sendto() for sending datagrams.
-    ssize_t bytes_sent = sendto(sock, packet, sizeof (packet), 0, (struct sockaddr *)&dest_in, sizeof(dest_in));
+    ssize_t bytes_sent = sendto(sock, packet, sizeof (packet), 0, (struct sockaddr*)&dest_in, sizeof(dest_in));
 
     if (bytes_sent == -1)
     {
@@ -117,13 +135,12 @@ ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
 
 int receivePong(int sock, char* reply, int sizToSend, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
     // Receive the packet using recvfrom() for receiving datagrams.
-    int bytes_received = recvfrom(sock, reply, sizToSend, 0, (struct sockaddr *)&dest_in, &len);
+    int bytes_received = (int) recvfrom(sock, reply, sizToSend, 0, (struct sockaddr*)&dest_in, &len);
     gettimeofday(&end, 0); // End the timer.
     if (bytes_received > 0)
     {
         struct iphdr *iphdr = (struct iphdr *)reply;
         struct icmphdr *icmphdrP = (struct icmphdr *)(reply + sizeof(struct iphdr));
-
 
         char destinationIP[32] = { '\0' };
         inet_ntop(AF_INET, &dest_in.sin_addr.s_addr, destinationIP, sizeof(destinationIP));
@@ -131,7 +148,7 @@ int receivePong(int sock, char* reply, int sizToSend, struct sockaddr_in dest_in
         float milliseconds = (float )(end.tv_sec - start.tv_sec) * 1000.0f +
                              (float) (end.tv_usec - start.tv_usec) / 1000.0f;
         printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%f ms\n",
-               ntohs(iphdr->tot_len)-IP4_HDRLEN, destinationIP, icmphdrP->un.echo.sequence++, iphdr->ttl, milliseconds);
+               ntohs(iphdr -> tot_len)-IP4_HDRLEN, destinationIP, icmphdrP -> un.echo.sequence++, iphdr -> ttl, milliseconds);
     }
     return bytes_received;
 }
