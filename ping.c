@@ -13,16 +13,16 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define IP4_HDRLEN 20 // IPv4 header len without options
-#define ICMP_HDRLEN 8 // ICMP header len for echo req
-#define PACKET_SIZE 64
+#define IP4_HDRLEN 20 // IPv4 header len without options.
+#define ICMP_HDRLEN 8 // ICMP header len for echo req.
+#define PACKET_SIZE 64 // Max packet size we allow.
 
-struct icmp icmphdr; // ICMP-header
+struct icmp icmphdr; // ICMP-header.
 char data[] = "This is the ping.\n"; // The data we send as ping.
 int sequence = 0; // A global variable for the sequence number.
 
 unsigned short calculate_checksum(unsigned short *, int ); // Checksum Method.
-ssize_t sendPing (int, struct sockaddr_in);
+ssize_t sendPing (int, struct sockaddr_in); // A method to create and send the ping.
 int receivePong(int, char*, int, struct sockaddr_in, socklen_t, struct timeval, struct timeval);
 
 int main(int argc, char *argv[])
@@ -134,9 +134,9 @@ ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
 // Receive Pong
 //===================
 
-int receivePong(int sock, char* reply, int sizToSend, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
+int receivePong(int sock, char* reply, int sizeToReceive, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
     // Receive the packet using recvfrom() for receiving datagrams.
-    int bytes_received = (int) recvfrom(sock, reply, sizToSend, 0, (struct sockaddr*)&dest_in, &len);
+    int bytes_received = (int) recvfrom(sock, reply, sizeToReceive, 0, (struct sockaddr*)&dest_in, &len);
     gettimeofday(&end, 0); // End the timer.
     if (bytes_received > 0)
     {

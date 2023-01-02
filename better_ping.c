@@ -19,19 +19,19 @@
 #include <sys/wait.h>
 
 #define PORT 3000
-#define IP_ADDRESS "127.0.0.1"
-#define IP4_HDRLEN 20 // IPv4 header len without options
-#define ICMP_HDRLEN 8 // ICMP header len for echo req
-#define PACKET_SIZE 64
+#define IP_ADDRESS "127.0.0.1" // IP address for loop-back.
+#define IP4_HDRLEN 20 // IPv4 header len without options.
+#define ICMP_HDRLEN 8 // ICMP header len for echo req.
+#define PACKET_SIZE 64 // Max packet size we allow.
 
 char data[] = "This is the ping.\n"; // The data we send as ping.
 int sequence = 0; // A global variable for the sequence number.
 
 unsigned short calculate_checksum(unsigned short *, int ); // Checksum Method.
-ssize_t sendPing (int, struct sockaddr_in);
+ssize_t sendPing (int, struct sockaddr_in); // A method to create and send the ping.
 void receivePong(int, char*, int, struct sockaddr_in, socklen_t, struct timeval, struct timeval);
 
-// run 2 programs using fork + exec
+// run 2 programs using fork + exec.
 // command: make clean && make all && ./partb
 int main(int argc, char *argv[]) {
 
@@ -97,15 +97,16 @@ int main(int argc, char *argv[]) {
     } else {
         printf("(=) Connection with server established.\n\n");
     }
+
     // Make Socket Non-Blocking for 10 seconds.
     struct timeval tv;
     tv.tv_sec = 10;
     tv.tv_usec = 0;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
 
-//=================================================
-// Send Ping And Receive Pong Using fork And execvp
-//=================================================
+//==================================================================
+// Use fork And execvp To Run Watchdog And Duplicate Current Process
+//==================================================================
 
     char *argd[2];
     // compiled watchdog.c by makefile
@@ -127,13 +128,17 @@ int main(int argc, char *argv[]) {
         printf("(-) Could not connect to server! -> connect() failed with error code: %d\n", errno);
         exit(EXIT_FAILURE); // Exit program and return// EXIT_FAILURE (defined as 1 in stdlib.h).
     } else {
-        printf("(=) Connection with server established.\n\n");
+        printf("(=) Connection with watchdog established.\n\n");
     }
 
     socklen_t len = sizeof(dest_in); // Save the dest_in length.
     struct timeval start, end;
     char reply[PACKET_SIZE] = {0}; // A buffer to hold the replay (pong).
     printf("PING %s (%s): %d data bytes\n", argv[1], argv[1], PACKET_SIZE - ICMP_HDRLEN);
+
+//=================================================
+// Send Ping And Receive Pong Using fork And execvp
+//=================================================
 
     // A do-while loop to send ping and receive pong.
     do {
@@ -201,9 +206,9 @@ ssize_t sendPing (int sock, struct sockaddr_in dest_in) {
 // Receive Pong
 //===================
 
-void receivePong(int sock, char* reply, int sizToSend, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
+void receivePong(int sock, char* reply, int sizeToReceive, struct sockaddr_in dest_in, socklen_t len, struct timeval start, struct timeval end) {
     // Receive the packet using recvfrom() for receiving datagrams.
-    int bytes_received = (int) recvfrom(sock, reply, sizToSend, 0, (struct sockaddr *)&dest_in, &len);
+    int bytes_received = (int) recvfrom(sock, reply, sizeToReceive, 0, (struct sockaddr *)&dest_in, &len);
     gettimeofday(&end, 0); // End the timer.
     if (bytes_received > 0)
     {
